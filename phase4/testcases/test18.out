@@ -1,0 +1,24 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): disk scheduling test, create 6 processes that write
+          3 to disk0         
+          3 to disk1         
+ubiq: going to write to unit 0 track 5
+ubiq: going to write to unit 0 track 3
+ubiq: going to write to unit 0 track 9
+ubiq: going to write to unit 1 track 4
+ubiq: going to write to unit 1 track 2
+ubiq: going to write to unit 1 track 8
+after writing unit 0 track 5
+process 13 quit with status 2
+after writing unit 1 track 4
+process 16 quit with status 5
+after writing unit 0 track 9
+process 15 quit with status 4
+after writing unit 1 track 8
+process 18 quit with status 7
+after writing unit 0 track 3
+process 14 quit with status 3
+after writing unit 1 track 2
+process 17 quit with status 6
+start4(): done 31
+finish(): The simulation is now terminating.

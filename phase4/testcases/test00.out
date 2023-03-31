@@ -1,0 +1,11 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): started
+          going to sleep for 5 seconds.
+start4(): Sleep starts at    293
+start4(): Sleep done at  5550075
+start4(): done.
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----

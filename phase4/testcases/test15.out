@@ -1,0 +1,8 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): Attempting some invalid writes.  If they are all rejected (as expected), then you will not see anything more before 'done'
+start4(): done
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----

@@ -1,0 +1,15 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): started
+XXterm2(): started
+XXterm2(): reading a line from terminal 2
+XXterm2(): after TermRead()
+XXterm2(): term2 read   50 bytes (hex):  74 77 6f 3a 20 66 69 72 73 74 20 6c 69 6e 65 20 20 20 28 74 68 69 72 64 20 6c 6f 6e 67 65 73 74 20 6c 69 6e 65 20 6f 66 20 74 68 65 20 73 65 74 29 0a
+                 strlen 50 buf  (text): 'two: first line   (third longest line of the set)
+'
+XXterm2(): Terminating
+start4(): XXterm2 completed. kidpid = 13, pid = 13
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----

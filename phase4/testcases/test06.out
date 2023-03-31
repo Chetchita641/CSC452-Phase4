@@ -1,0 +1,14 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): Spawn two children. Child1 writes one line to terminal 1. Child2 reads one line from terminal 1.
+Child2(): read 40 characters from terminal 1
+Child2(): read 'one: first line   (shortest first line)
+'
+Child2(): Terminating
+Child1(): Terminating
+start4(): done.
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+A Something interesting to print here...
+----- term2.out -----
+----- term3.out -----

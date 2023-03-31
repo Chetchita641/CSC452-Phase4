@@ -1,0 +1,18 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): Writing data to 3 disk sectors, wrapping to next track
+
+start4(): Disk 0:
+start4(): Read from disk: This is a test
+start4(): Read from disk: Does it work?
+start4(): Read from disk: One last chance
+
+start4(): Disk 1:
+start4(): Read from disk: This is a test -- something different for this disk
+start4(): Read from disk: Does it work?  -- another change
+start4(): Read from disk: One last chance -- and one last change, too!
+
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----

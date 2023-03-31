@@ -1,0 +1,20 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): Spawn four children.  Each child reads from a different terminal.  The child reading the shortest line will finish first, etc.
+Child0(): start
+Child1(): start
+Child2(): start
+Child3(): start
+Child1(): read one: first line   (shortest first line)
+Child1(): done
+Child2(): read two: first line   (third longest line of the set)
+Child2(): done
+Child0(): read zero: first line   (second longest first line in the inputs)
+Child0(): done
+Child3(): read three: first line   (definitely the longest first line of all the files)
+Child3(): done
+start4(): done.
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----

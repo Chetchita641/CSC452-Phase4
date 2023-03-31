@@ -1,0 +1,34 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): disk scheduling test, 8 children
+          algorithm test           
+          different tracks
+going to write track 5
+going to write track 3
+going to write track 9
+going to write track 0
+going to write track 7
+going to write track 2
+going to write track 1
+going to write track 6
+after writing track 5
+process 13 quit with status 2
+after writing track 6
+process 20 quit with status 9
+after writing track 7
+process 17 quit with status 6
+after writing track 9
+process 15 quit with status 4
+after writing track 0
+process 16 quit with status 5
+after writing track 1
+process 19 quit with status 8
+after writing track 2
+process 18 quit with status 7
+after writing track 3
+process 14 quit with status 3
+start4(): done 33
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----

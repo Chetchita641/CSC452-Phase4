@@ -1,0 +1,105 @@
+phase5_start_service_processes() called -- currently a NOP
+start4(): started
+start4(): unit 1, sector size 512, track size 16, disk size 32
+
+start4(): writing to disk 1, track 0, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 1, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 2, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 3, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 4, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 5, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 6, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 7, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 8, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 9, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 10, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 11, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 12, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 13, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 14, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 15, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 16, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 17, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 18, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 19, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 20, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 21, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 22, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 23, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 24, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 25, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 26, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 27, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 28, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 29, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 30, sector 0
+start4(): DiskWrite returned status = 0
+
+start4(): writing to disk 1, track 31, sector 0
+start4(): DiskWrite returned status = 0
+start4(): calling Terminate
+finish(): The simulation is now terminating.
+----- term0.out -----
+----- term1.out -----
+----- term2.out -----
+----- term3.out -----
