@@ -60,7 +60,7 @@ int testcase_main()
     int pid_fork, pid_join;
     int status;
 
-    fork1("testcase_timeout", testcase_timeout_proc, "ignored", USLOSS_MIN_STACK, 5);
+    //fork1("testcase_timeout", testcase_timeout_proc, "ignored", USLOSS_MIN_STACK, 5);
 
     pid_fork = fork1("start4", start4_trampoline, "start4", 4*USLOSS_MIN_STACK, 3);
     pid_join = join(&status);

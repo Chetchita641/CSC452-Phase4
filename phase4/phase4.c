@@ -14,8 +14,8 @@ void DiskSize_handler(USLOSS_Sysargs *args);
 void DiskRead_handler(USLOSS_Sysargs *args);
 void DiskWrite_handler(USLOSS_Sysargs *args);
 
-#define TRACE 0
-#define DEBUG 0
+#define TRACE 1
+#define DEBUG 1
 
 #define READ 0
 #define WRITE 1
@@ -36,13 +36,20 @@ typedef struct disk_list_node{
 	struct disk_list_node* next;
 }disk_list_node;
 
+typedef struct term_list_node {
+	int pid;
+	int operation;
+	struct term_list_node* next;
+} term_list_node;
+
 long time_counter;
 sleep_list_node* sleep_list;
 disk_list_node* disk_list;
+term_list_node* term_lists[USLOSS_MAX_UNITS];
 
 int sleep_daemon(char*);
 int disk_daemon(char*);
-void add_sleep_list(int pid, long wake_up_time);
+int term_daemon(char*);
 
 int disk_mutex_mailbox_num;
 void disk_lock();
@@ -66,6 +73,10 @@ void phase4_init(void) {
 	systemCallVec[SYS_DISKWRITE] = DiskWrite_handler;
 
 	disk_mutex_mailbox_num = MboxCreate(1,0);
+
+	for (int i = 0; i < USLOSS_MAX_UNITS; i++) {
+		term_lists[i] = NULL;
+	}
 }
 
 /**
@@ -78,10 +89,14 @@ void phase4_init(void) {
 void phase4_start_service_processes(void) {
 	fork1("sleep_daemon", sleep_daemon, "", USLOSS_MIN_STACK, 1);
 	fork1("disk_daemon", disk_daemon, "", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_0", term_daemon, "0", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_1", term_daemon, "1", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_2", term_daemon, "2", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_3", term_daemon, "3", USLOSS_MIN_STACK, 1);
 }
 
 /** 
- * Performs a raed of one of the terminals; an entire line will be read. This line will either end with a newline, or be exactly MAXLINE characters long (will need to do MAXLINE+1 for buffer). If the syscall asks for a shorter line than is ready in the buffer, only part of the buffer will be copied and the rest discarded.
+ * Performs a read of one of the terminals; an entire line will be read. This line will either end with a newline, or be exactly MAXLINE characters long (will need to do MAXLINE+1 for buffer). If the syscall asks for a shorter line than is ready in the buffer, only part of the buffer will be copied and the rest discarded.
  * System Call: SYS_TERMREAD
  * System Call Arguments:
  *	arg1: buffer pointer
@@ -91,7 +106,58 @@ void phase4_start_service_processes(void) {
  * 	arg2: number of characters read
  * 	arg4: -1 if illegal values were given as input; 0 otherwise
 */
-void TermRead_handler(USLOSS_Sysargs *args) {}
+void TermRead_handler(USLOSS_Sysargs *args) {
+	// Check which terminal triggered the interrupt
+	// Read that terminal's status register using USLOSS_DeviceInput(USLOSS_TERM_DEV,unit,&status
+	// If Ready, nothing's there and block. 
+	// If Busy, there's a character waiting to be read.
+
+	if (TRACE)
+		USLOSS_Console("TRACE: In TermRead handler\n");
+
+	char* buffer = (char*) args->arg1;
+	int bufferSize = (int)(long) args->arg2;
+	int termNum = (int)(long) args->arg3;
+
+	if (termNum < 0 || termNum > 3) {
+		USLOSS_Console("ERROR: Invalid terminal number.\n");
+		return;
+	}
+	if (buffer == NULL) {
+		USLOSS_Console("ERROR: Invalid buffer address.\n");
+		return;
+	}
+	
+	int charsRead = 0;
+	bufferSize = bufferSize < MAXLINE+1 ? bufferSize : MAXLINE+1;
+
+	int status;
+
+	while (charsRead < bufferSize) {
+		waitDevice(USLOSS_TERM_DEV, termNum, &status);
+		if (status & USLOSS_DEV_BUSY) {
+			char c = USLOSS_TERM_STAT_CHAR(status);
+			if (DEBUG) {
+				USLOSS_Console("DEBUG: Character received from Terminal %d: %c\n", termNum, c);
+			}
+
+			*buffer = c;
+			buffer++;
+			charsRead++;
+
+			if (c == '\n')
+				break;
+		}
+		else if (status & USLOSS_DEV_ERROR) {
+			// TODO: What are we supposed to do with errors?
+			USLOSS_Console("ERROR DETECTED WITH TERMINAL %d\n", termNum);
+			break;
+		}
+	}
+
+	args->arg2 = (void*)(long) charsRead;
+	args->arg4 = (void*)(long) 0;	
+}
 
 
 /** 
@@ -253,7 +319,6 @@ void Sleep_handler(USLOSS_Sysargs *args) {
 	// Block me
 	if(TRACE){
 		USLOSS_Console("In Sleep handler\n");
-		dumpProcesses();
 	}
 	int pid = getpid();
 	long seconds = (long)args->arg1;
@@ -265,36 +330,44 @@ void Sleep_handler(USLOSS_Sysargs *args) {
 	new_node.next = NULL;
 	
 	if(sleep_list==NULL){
-		if(DEBUG)
-			USLOSS_Console("sleep_list was null\n");		
 		sleep_list = &new_node;
 	}
 	else{
-		if(DEBUG)
-			USLOSS_Console("Adding not at head");
 		sleep_list_node* curr = sleep_list;
 		while(curr->next!=NULL && (curr->next->wake_up_time < new_node.wake_up_time)){
 			curr = curr->next;
 		}
-		if(DEBUG)
-			USLOSS_Console("After while loop");
 		new_node.next = curr->next;
 		curr->next = &new_node;
 	}
-	if(DEBUG)
-		dumpProcesses();
 	blockMe(40);
 
 	args->arg4 = 0;
 }
 
-void add_sleep_list(int pid, long wake_up_time){
+int term_daemon(char* arg) {
+	if (TRACE)
+		USLOSS_Console("TRACE: In term daemon\n");
+
+	int status;
+	int termNum = atoi(arg);
+	while (1) {
+		waitDevice(USLOSS_TERM_DEV, termNum, &status);
+		
+		if (term_lists[termNum] != NULL) {
+			int pid = term_lists[termNum]->pid;
+			term_lists[termNum] = term_lists[termNum]->next;
+			unblockProc(pid);
+		}
+	}
+	return 0;
 }
+
 int sleep_daemon(char* arg){
 	int status;
 	while(1){
 		waitDevice(USLOSS_CLOCK_DEV, 0, &status);
-                time_counter++;
+		time_counter++;
 		// check queue
 		while(sleep_list!=NULL && sleep_list->wake_up_time<=time_counter){
 			int pid = sleep_list->pid;
