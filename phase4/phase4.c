@@ -179,15 +179,12 @@ void DiskSize_handler(USLOSS_Sysargs *args) {
 	
 	int unit = (int)(long) args->arg1;
 	args->arg1 = (void*)(long)512;
-	USLOSS_Console("getting size of disk %d\n", unit);
 	args->arg2 = (void*)(long)16;
 	if(unit==0){
 		track_count_lock0();
 		int count = track_count0;
 		track_count_unlock0();
 		if(count>-1){
-			if(DEBUG)
-				USLOSS_Console("size of disk %d was already set \n", unit);
 			args->arg3 = (void*)(long)count;
 			return;
 		}
@@ -198,8 +195,6 @@ void DiskSize_handler(USLOSS_Sysargs *args) {
 		track_count_unlock1();
 		if(count>-1){
 			args->arg3 = (void*)(long)count;
-			if(DEBUG)
-				USLOSS_Console("size of disk %d was already set \n", unit);
 			return;
 		}
 	}
@@ -383,6 +378,15 @@ void DiskWrite_handler(USLOSS_Sysargs *args) {
 
 		if(disk_list0==NULL){
 			disk_list0 = &new_node;
+			// Send dummy operation
+			if(DEBUG)
+				USLOSS_Console("Disk queue empty, sending dummy op\n");
+			int num=0;
+			USLOSS_DeviceRequest req;
+ 			req.opr = USLOSS_DISK_TRACKS;
+			req.reg1 = (void*)&num;
+			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
+
 		}
 		else{
 			disk_list_node* curr = disk_list0;
@@ -513,19 +517,13 @@ int get_tracks(char* args){
 }
 
 void get_track_count(int unit){
-	if(DEBUG)
-		USLOSS_Console("in get track count\n");
 	USLOSS_DeviceRequest req;
 	int num;
 	int status;
 	req.opr = USLOSS_DISK_TRACKS;
 	req.reg1 = &num;
 	USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
-	if(DEBUG)
-		USLOSS_Console("Before wiat decive\n");
 	waitDevice(USLOSS_DISK_DEV, unit, &status);
-	if(DEBUG)
-		USLOSS_Console("After wait device\n");
 	if(unit==0){
 		track_count_lock0();
 		track_count0 = num;
@@ -534,8 +532,6 @@ void get_track_count(int unit){
 		track_list_node* curr = track_list0;
 		
 		while(curr!=NULL){
-			if(DEBUG)
-				USLOSS_Console("unblcok waiting proc in get track\n");
 			curr->response = track_count0;
 			
 			void* empty_message = "";
@@ -552,8 +548,6 @@ void get_track_count(int unit){
 		track_list_lock1();
 		track_list_node* curr = track_list1;
 		while(curr!=NULL){
-			if(DEBUG)
-				USLOSS_Console("unblcok waiting proc in get track\n");
 			curr->response = track_count1;
 			
 			void* empty_message = "";
@@ -571,7 +565,7 @@ int disk_daemon(char* arg){
 	USLOSS_DeviceRequest req;
 	while(1){
 		USLOSS_Console("Top of deamon loop\n");
-		if(disk_list0==NULL){
+		/*if(disk_list0==NULL){
 			// Send dummy operation
 			if(DEBUG)
 				USLOSS_Console("Disk queue empty, sending dummy op\n");
@@ -580,7 +574,9 @@ int disk_daemon(char* arg){
  			req.opr = USLOSS_DISK_TRACKS;
 			req.reg1 = (void*)&num;
 			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
-		}
+		}*/
+		if(DEBUG)
+			USLOSS_Console("Before waitDevice in Disk\n");
 		waitDevice(USLOSS_DISK_DEV, unit, &status);
 		if(DEBUG)
 			USLOSS_Console("After waitDevice in disk\n");
@@ -636,9 +632,11 @@ int disk_daemon(char* arg){
 				}*/
 				// At correct track, ready to read/write
 				//else if(curr->sectors == 0){
-				else if(curr->sectors == 0){
+				if(curr->sectors == 0){
 					// If operation is done remove from queue
 					// grab next proc off queue
+					if(DEBUG)
+						USLOSS_Console("done w op\n");
 					if(unit==0){
 						disk_lock0();
 						curr = disk_list0;
@@ -664,7 +662,8 @@ int disk_daemon(char* arg){
 					
 					int block_index = block;
 					char *buf = curr->buffer;
-					
+					if(DEBUG)
+						USLOSS_Console("Gonna do write/read block %d blcok index %d track %d\n", block, block_index, curr->track);
 					req.reg1 = (void*)(long)block_index;
 					req.reg2 = buf;
 					if(curr->operation==READ){
