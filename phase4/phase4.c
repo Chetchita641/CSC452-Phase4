@@ -62,6 +62,7 @@ int sleep_daemon(char*);
 int disk_daemon(char*);
 void get_track_count(int unit);
 int get_tracks(char* args);
+void wait_get_tracks(int unit);
 
 void disk_helper(USLOSS_Sysargs* args, int operation);
 void add_sleep_list(int pid, long wake_up_time);
@@ -181,8 +182,11 @@ void DiskSize_handler(USLOSS_Sysargs *args) {
 	if(DEBUG)
 		USLOSS_Console("in disk size hanlder\n");	
 	int unit = (int)(long) args->arg1;
+	// Size of block and blocks in a track are fixed
 	args->arg1 = (void*)(long)512;
 	args->arg2 = (void*)(long)16;
+
+	// Check if the global count variable is already set
 	if(unit==0){
 		track_count_lock0();
 		int count = track_count0;
@@ -205,6 +209,8 @@ void DiskSize_handler(USLOSS_Sysargs *args) {
 	}
 		
 
+	// If not ready, put myself on a queue to be woken up when
+	// the global track count variable is set
 	int my_mailbox_num = MboxCreate(1,0);
 	
 	track_list_node new_node;
@@ -244,7 +250,7 @@ void DiskSize_handler(USLOSS_Sysargs *args) {
 
 
 	
-	// Recv on specified mailbox, so daemon can wake me up at the right time
+	// Recv on specified mailbox, so I'm woken up at the right time
 	if(DEBUG)
 		USLOSS_Console("Disk size blockig\n");
 	void* empty_message = "";
@@ -273,6 +279,7 @@ void DiskRead_handler(USLOSS_Sysargs *args) {
 	disk_helper(args, READ);
 }
 
+// Debug disk queue
 void print_disk1(){
 	disk_list_node* curr = disk_list1;
 	while(curr!=NULL){
@@ -282,6 +289,7 @@ void print_disk1(){
 	USLOSS_Console("\n");
 }
 
+// Debug disk queue
 void print_disk0(){
 	disk_list_node* curr = disk_list0;
 	while(curr!=NULL){
@@ -344,8 +352,10 @@ void Sleep_handler(USLOSS_Sysargs *args) {
 	args->arg4 = 0;
 }
 
+// Not used?
 void add_sleep_list(int pid, long wake_up_time){
 }
+
 int sleep_daemon(char* arg){
 	int status;
 	while(1){
@@ -363,16 +373,20 @@ int sleep_daemon(char* arg){
 
 void disk_helper(USLOSS_Sysargs* args, int operation){
 
+	// Access arguments
 	int sectors_num = (int)(long) args->arg2;
 	int track = (int)(long) args->arg3;	
 	int start_block = (int)(long) args->arg4;
 	int my_mailbox_num = MboxCreate(1,0);
 	int unit = (int)(long) args->arg5;
 	
+	// Validate args
 	if((unit!=0&&unit!=1)|| start_block<0 || start_block>16){
 		args->arg4 = -1;
 		return;
 	}
+
+	// Create node for disk queue
 	disk_list_node new_node;
 	new_node.pid = getpid();
 	new_node.started = 0;
@@ -391,39 +405,17 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 		disk_lock0();
 		if(disk_list0==NULL){
 
-			// Send dummy operation
+			// No one on queue (disk daemon idle)
 			
 			disk_list0 = &new_node;
 			disk_unlock0();
-			track_count_lock0();
-			int count = track_count0;
-			track_count_unlock0();
-			if(count<0){
-
-				int mailbox_num = MboxCreate(1,0);
-		
-				track_list_node new_node;
-				new_node.mailbox_num = mailbox_num;
-				new_node.next = NULL;
-
-	
-				track_list_lock0();
-	
-				if(track_list0==NULL){
-					track_list0 = &new_node;
-				}
-				else{
-					track_list_node* head = track_list0;
 			
-					new_node.next = head->next;
-					head->next = &new_node;
-				}
-
-				track_list_unlock0();
-				void* empty_message = "";
-				MboxRecv(mailbox_num, empty_message, 0);	
-				MboxRelease(mailbox_num);
-			}
+			// Need to wait until track count is done being set, so the
+			// process getting track count doesn't "steal" this operation
+			// we are sending
+			wait_get_tracks(unit);
+			
+			// Send dummy operation to wake up idle daemon
 			int num=0;
 			USLOSS_DeviceRequest req;
  			req.opr = USLOSS_DISK_TRACKS;
@@ -433,8 +425,8 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 		else{
 			disk_list_node* curr = disk_list0;
 			if(new_node.track < curr->track){
-				// Inserting value that is less than first value, put at end
-				// Itterate to end of front part of list
+				// Inserting value that is less than head of list, put in second part of list
+				// Iterate to end of front part of list
 				while(curr->next!=NULL && curr->track <= curr->next->track){
 					curr = curr->next;
 				}
@@ -446,8 +438,9 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 				curr->next = &new_node;
 			}
 			else{
+				// Insert value that isn't greater than head of list
+				// Put in order in first part of list
 				while(curr->next!=NULL && (curr->next->track < new_node.track) && (curr->track<curr->next->track)){
-
 					curr = curr->next;
 				}
 				new_node.next = curr->next;
@@ -456,43 +449,16 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 			disk_unlock0();
 		}
 	}
-	else{
+	else{ // Same as above but for disk 1
 		disk_lock1();
 		if(disk_list1==NULL){
 
-			// Send dummy operation
 			
 			disk_list1 = &new_node;
 			disk_unlock1();
-			track_count_lock1();
-			int count = track_count1;
-			track_count_unlock1();
-			if(count<0){
-
-				int mailbox_num = MboxCreate(1,0);
-		
-				track_list_node new_node;
-				new_node.mailbox_num = mailbox_num;
-				new_node.next = NULL;
-
 	
-				track_list_lock1();
-	
-				if(track_list1==NULL){
-					track_list1 = &new_node;
-				}
-				else{
-					track_list_node* head = track_list1;
+			wait_get_tracks(unit);
 			
-					new_node.next = head->next;
-					head->next = &new_node;
-				}
-
-				track_list_unlock1();
-				void* empty_message = "";
-				MboxRecv(mailbox_num, empty_message, 0);	
-				MboxRelease(mailbox_num);
-			}
 			int num=0;
 			USLOSS_DeviceRequest req;
  			req.opr = USLOSS_DISK_TRACKS;
@@ -502,14 +468,10 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 		else{
 			disk_list_node* curr = disk_list1;
 			if(new_node.track < curr->track){
-				// Inserting value that is less than first value, put at end
-				// Itterate to end of front part of list
 				while(curr->next!=NULL && curr->track <= curr->next->track){
 					curr = curr->next;
 				}
-				// Now can just insert like normal
 				while(curr->next!=NULL && (curr->next->track < new_node.track)){
-
 					curr = curr->next;
 				}
 				new_node.next = curr->next;
@@ -517,7 +479,6 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 			}
 			else{
 				while(curr->next!=NULL && (curr->next->track < new_node.track) && (curr->track<curr->next->track)){
-
 					curr = curr->next;
 				}
 				new_node.next = curr->next;
@@ -532,8 +493,9 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 	// Recv on specified mailbox, so daemon can wake me up at the right time
 	void* empty_message = "";
 	MboxRecv(my_mailbox_num, empty_message, 0);	
-	MboxRelease(my_mailbox_num);
+	
 	//Operation is complete
+	MboxRelease(my_mailbox_num);
 	args->arg1 = (void*)(long)new_node.response_status;
 	args->arg4 = (void*)(long)0;
 }
@@ -541,15 +503,22 @@ void disk_helper(USLOSS_Sysargs* args, int operation){
 int get_tracks(char* args){
 	get_track_count(0);
 	get_track_count(1);
+	
 	USLOSS_Sysargs sysArgs0;
  	sysArgs0.arg1 = (void *) ( (long) 0);
 	DiskSize_handler(&sysArgs0);
+	
 	USLOSS_Sysargs sysArgs1;
  	sysArgs1.arg1 = (void *) ( (long) 1);
 	DiskSize_handler(&sysArgs1);
 }
 
+/**
+* Sends the global track_count variable for the specified disk unit
+*/
 void get_track_count(int unit){
+
+	// Send a request to disk to get track info
 	USLOSS_DeviceRequest req;
 	int num;
 	int status;
@@ -562,12 +531,15 @@ void get_track_count(int unit){
 	if(DEBUG)
 		USLOSS_Console("After wait dev in get track %d\n", unit);
 	if(unit==0){
+		
+		// Put result from device output into global variable
 		track_count_lock0();
 		track_count0 = num;
 		track_count_unlock0();
 		track_list_lock0();
 		track_list_node* curr = track_list0;
 		
+		// Wake up all proccesses waiting for track count
 		while(curr!=NULL){
 			curr->response = track_count0;
 			
@@ -578,7 +550,7 @@ void get_track_count(int unit){
 	
 		track_list_unlock0();
 	}
-	else{
+	else{ // Same as above but for disk 1
 		track_count_lock1();
 		track_count1 = num;
 		track_count_unlock1();
