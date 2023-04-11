@@ -15,8 +15,8 @@ void DiskSize_handler(USLOSS_Sysargs *args);
 void DiskRead_handler(USLOSS_Sysargs *args);
 void DiskWrite_handler(USLOSS_Sysargs *args);
 
-#define TRACE 1
-#define DEBUG 1
+#define TRACE 0
+#define DEBUG 0
 
 #define READ 0
 #define WRITE 1
@@ -40,15 +40,12 @@ typedef struct disk_list_node{
 }disk_list_node;
 
 typedef struct term_data {
-	int mailbox_num;
-	char read_buffers[MAX_TERM_BUFFERS][MAXLINE+1];
-	char write_buffer[MAXLINE+1];
-	int buffer_idx;
-	int msgs_waiting;
+	int read_mb;
+	int write_mb;
+	char buffer[MAXLINE+1];
 } term_data;
 
 term_data terminals[USLOSS_MAX_UNITS];
-int terminal_locks[USLOSS_MAX_UNITS];
 
 long time_counter;
 sleep_list_node* sleep_list;
@@ -56,8 +53,7 @@ disk_list_node* disk_list;
 
 int sleep_daemon(char*);
 int disk_daemon(char*);
-int term_read_daemon(char*);
-int term_write_daemon(char*);
+int term_daemon(char*);
 
 int disk_mutex_mailbox_num;
 void disk_lock();
@@ -66,9 +62,12 @@ void disk_unlock();
 void add_to_buffer(char c, int termNum);
 void flush_term_buffer(int termNum);
 
-int terminal_write_mailbox_nums[USLOSS_MAX_UNITS];
-void terminal_write_lock(int termNum);
-void terminal_write_unlock(int termNum);
+int terminal_locks[USLOSS_MAX_UNITS];
+void terminal_lock(int termNum);
+void terminal_unlock(int termNum);
+
+void termWriting(int termNum, char* to_write);
+void termReading(int termNum);
 
 // Core Functions
 /////////////////////////////////////////////////////////////////////////////////
@@ -93,24 +92,12 @@ void phase4_init(void) {
 
 	for (int i = 0; i < USLOSS_MAX_UNITS; i++) {
 		term_data td;
-		td.mailbox_num = MboxCreate(MAX_TERM_BUFFERS,MAXLINE+1);
-		for (int j = 0; j < MAX_TERM_BUFFERS; j++) {
-			memset(td.read_buffers[j], 0, MAXLINE+1);
-		}
-		td.buffer_idx = 0;
-		td.msgs_waiting = 0;	
+		td.read_mb = MboxCreate(MAX_TERM_BUFFERS,MAXLINE+1);
+		td.write_mb = MboxCreate(1,MAXLINE+1);
+		memset(td.buffer,0,MAXLINE+1);
 		terminals[i] = td; 
 
-		// Enabling recv and xmit interrupts for the terminals
-		int ctrl = 0;
-		ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
-		ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
-		USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void*) ctrl);
-
-		// Activating mailboxes for term_write daemons
-		terminal_write_mailbox_nums[i] = MboxCreate(1,0);
-
-		// Activating locks for terminals
+		// Activating locks for terminal locks
 		terminal_locks[i] = MboxCreate(1,0);
 	}
 }
@@ -125,14 +112,10 @@ void phase4_init(void) {
 void phase4_start_service_processes(void) {
 	fork1("sleep_daemon", sleep_daemon, "", USLOSS_MIN_STACK, 1);
 	fork1("disk_daemon", disk_daemon, "", USLOSS_MIN_STACK, 1);
-	fork1("term_read_daemon_0", term_read_daemon, "0", USLOSS_MIN_STACK, 1);
-	fork1("term_read_daemon_1", term_read_daemon, "1", USLOSS_MIN_STACK, 1);
-	fork1("term_read_daemon_2", term_read_daemon, "2", USLOSS_MIN_STACK, 1);
-	fork1("term_read_daemon_3", term_read_daemon, "3", USLOSS_MIN_STACK, 1);
-	fork1("term_write_daemon_0", term_write_daemon, "0", USLOSS_MIN_STACK, 1);
-	fork1("term_write_daemon_1", term_write_daemon, "1", USLOSS_MIN_STACK, 1);
-	fork1("term_write_daemon_2", term_write_daemon, "2", USLOSS_MIN_STACK, 1);
-	fork1("term_write_daemon_3", term_write_daemon, "3", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_0", term_daemon, "0", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_1", term_daemon, "1", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_2", term_daemon, "2", USLOSS_MIN_STACK, 1);
+	fork1("term_daemon_3", term_daemon, "3", USLOSS_MIN_STACK, 1);
 }
 
 /** 
@@ -146,6 +129,7 @@ void phase4_start_service_processes(void) {
  * 	arg2: number of characters read
  * 	arg4: -1 if illegal values were given as input; 0 otherwise
 */
+
 void TermRead_handler(USLOSS_Sysargs *args) {
 	if (TRACE)
 		USLOSS_Console("TRACE: In TermRead handler\n");
@@ -154,6 +138,7 @@ void TermRead_handler(USLOSS_Sysargs *args) {
 	int bufferSize = (int)(long) args->arg2;
 	int termNum = (int)(long) args->arg3;
 
+	
 	if (bufferSize <= 0 || bufferSize > MAXLINE) {
 		args->arg2 = 0;
 		args->arg4 = (void*)(long) -1;
@@ -166,20 +151,17 @@ void TermRead_handler(USLOSS_Sysargs *args) {
 	}
 
 	term_data* term_ptr = &terminals[termNum];
-	flush_term_buffer(termNum);
-	if (term_ptr->msgs_waiting > 0) {
-		char* temp_buffer;
-		MboxCondRecv(term_ptr->mailbox_num, &temp_buffer, bufferSize);
-		term_ptr->msgs_waiting--;
-		args->arg2 = (void*)(long) strlen(temp_buffer);
+	if (DEBUG) {
+		USLOSS_Console("DEBUG: Right before receiving message\n");
+		dumpProcesses();
 	}
-	else {
-		args->arg2 = (void*)(long) strlen(buffer);
-	}
-	
+
+	MboxRecv(term_ptr->read_mb, buffer, bufferSize);
+
+	int charsRead = strlen(buffer);
+	args->arg2 = (void*)(long) charsRead;
 	args->arg4 = 0;
 }
-
 
 /** 
  * Writes characters from a buffer to a terminal. All of the character of the buffer will be written atomically; no other process can write to the terminal until they have flushed.
@@ -206,16 +188,12 @@ void TermWrite_handler(USLOSS_Sysargs *args) {
 		return;
 	}
 
-	terminal_write_lock(termNum);
-
 	term_data* term_ptr = &terminals[termNum];
-	strcpy(term_ptr->write_buffer,buffer);
 	
-	int mbox_id = terminal_write_mailbox_nums[termNum];
-	void* empty_message = "";
-	MboxSend(mbox_id, empty_message, 0);
+	MboxSend(term_ptr->write_mb, buffer, bufferSize);
 
-	terminal_write_unlock(termNum);
+	args->arg2 = (void*)(long) bufferSize;
+	args->arg4 = 0;
 }
 
 /** 
@@ -388,58 +366,73 @@ void Sleep_handler(USLOSS_Sysargs *args) {
 	args->arg4 = 0;
 }
 
-int term_read_daemon(char* arg) {
-	if (TRACE)
-		USLOSS_Console("TRACE: In Term read Daemon\n");
-
+int term_daemon(char* arg) {
 	int status;
 	int termNum = atoi(arg);
+	term_data* term_ptr = &terminals[termNum];
+	
+	char to_write[MAXLINE+1];
+	memset(to_write,0,MAXLINE+1);
+	
+	// Enabling recv and xmit interrupts for the terminals
+	USLOSS_DeviceOutput(USLOSS_TERM_DEV, termNum, (void*) 6);
+
 	while (1) {
 		waitDevice(USLOSS_TERM_DEV, termNum, &status);
-		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY) {
-			char c = USLOSS_TERM_STAT_CHAR(status);
-			add_to_buffer(c, termNum);
+		//USLOSS_DeviceInput(USLOSS_TERM_DEV, termNum, &status);
+		
+		MboxCondRecv(term_ptr->write_mb, to_write, MAXLINE);
+		if (USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY && strlen(to_write) > 0) {
+			terminal_lock(termNum);
+
+			termWriting(termNum, to_write);
+			memset(to_write,0,MAXLINE+1);
+
+			terminal_unlock(termNum);
 		}
-		else if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_ERROR) {
-			USLOSS_Console("ERROR: Error detected when reading from terminal %d\n", termNum);
+
+		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY) {
+			terminal_lock(termNum);
+
+			char c = USLOSS_TERM_STAT_CHAR(status);
+			int len = (int) strlen(term_ptr->buffer);
+			term_ptr->buffer[len] = c;
+
+			if (c == '\0' || c == '\n' || len+1 >= MAXLINE) {
+				termReading(termNum);				
+			}
+
+			terminal_unlock(termNum); 
 		}
 	}
-	return 0;
 }
 
-int term_write_daemon(char* arg) {
-	if (TRACE)
-		USLOSS_Console("TRACE: In Term write Daemon\n");
-
-	int termNum = atoi(arg);
-	term_data* term_ptr = &terminals[termNum];
-
-	int mbox_id = terminal_write_mailbox_nums[termNum];
-	void* empty_message = "";
-	while (1) {
-		MboxRecv(mbox_id, empty_message, 0);
-		terminal_write_lock(termNum);
-
-		int status;
-		int i = 0;
-		while (term_ptr->write_buffer[i] != '\0' && term_ptr->write_buffer[i] != '\n') {
-			USLOSS_DeviceInput(USLOSS_TERM_DEV, termNum, &status);
-			while (USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_BUSY) {
-				USLOSS_DeviceInput(USLOSS_TERM_DEV, termNum, &status);
-			}
-			char c = term_ptr->write_buffer[i];
-			int ctrl = 0;	
-			ctrl = USLOSS_TERM_CTRL_CHAR(ctrl,c);
-			ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
-			
-			USLOSS_DeviceOutput(USLOSS_TERM_DEV, termNum, (void*) ctrl);
-			i++;	
+void termWriting(int termNum, char* to_write) {
+	int status;
+	char* w = to_write;
+	int ctrl;
+	while (*w != '\0' && *w != '\n') {
+		ctrl = USLOSS_TERM_CTRL_CHAR(7,*w);
+		USLOSS_DeviceOutput(USLOSS_TERM_DEV, termNum, (void*) ctrl);
+		waitDevice(USLOSS_TERM_DEV, termNum, &status);
+		while (USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_BUSY) {
+			waitDevice(USLOSS_TERM_DEV, termNum, &status);
 		}
-
-		memset(term_ptr->write_buffer, 0, MAXLINE+1);
-
-		terminal_write_unlock(termNum);
+		w++;	
 	}
+	
+	ctrl = USLOSS_TERM_CTRL_CHAR(7,*w);
+	USLOSS_DeviceOutput(USLOSS_TERM_DEV, termNum, (void*) ctrl);
+}
+
+void termReading(int termNum) {
+	term_data* term_ptr = &terminals[termNum];
+	char tempBuf[MAXLINE+1];
+	
+	strcpy(tempBuf, term_ptr->buffer);
+	memset(term_ptr->buffer, 0, MAXLINE+1);
+
+	MboxCondSend(term_ptr->read_mb, tempBuf, strlen(tempBuf));
 }
 
 int sleep_daemon(char* arg){
@@ -499,55 +492,20 @@ void disk_unlock(){
 }
 
 /** 
-* Acquire lock for writing to a given terminal
+* Acquire lock for a given terminal
 */
-void terminal_write_lock(int termNum) {
+void terminal_lock(int termNum) {
 	void* empty_message = "";
 	int term_mailbox = terminal_locks[termNum];
 	MboxSend(term_mailbox, empty_message, 0);
 }
 
 /** 
-* Release lock for writing to a given terminal
+* Release lock for a given terminal
 */
-void terminal_write_unlock(int termNum) {
+void terminal_unlock(int termNum) {
 	void* empty_message = "";
 	int term_mailbox = terminal_locks[termNum];
 	MboxRecv(term_mailbox, empty_message, 0);
-}
-
-/** 
-* Adds a character to the terminal's buffer.
-*/
-void add_to_buffer(char c, int termNum) {
-	term_data* term_ptr = &terminals[termNum];
-
-	if (strlen(term_ptr->read_buffers[term_ptr->buffer_idx]) > MAXLINE) {
-		flush_term_buffer(termNum);
-		term_ptr->buffer_idx++;
-	}
-
-	size_t len = strlen(term_ptr->read_buffers[term_ptr->buffer_idx]);
-	term_ptr->read_buffers[term_ptr->buffer_idx][len] = c;
-}
-
-/** 
-* Flushes the read buffer into a mailbox message.
-* If nothing in the buffer, just return.
-* Rotates the buffer index and clears out the next buffer for use
-*/
-void flush_term_buffer(int termNum) {
-	term_data* term_ptr = &terminals[termNum];
-	
-	int mbox_id = term_ptr->mailbox_num;
-	char* buffer_ptr = &term_ptr->read_buffers[term_ptr->buffer_idx];
-	if (strlen(buffer_ptr) == 0)
-		return;	
-
-	MboxCondSend(mbox_id, buffer_ptr, strlen(buffer_ptr));
-	term_ptr->msgs_waiting++;
-
-	term_ptr->buffer_idx = (term_ptr->buffer_idx + 1) % MAX_TERM_BUFFERS;
-	memset(term_ptr->read_buffers[term_ptr->buffer_idx], 0, MAXLINE+1);
 }
 
