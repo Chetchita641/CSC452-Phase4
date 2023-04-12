@@ -76,13 +76,6 @@ int get_tracks(char* args);
 
 void add_sleep_list(int pid, long wake_up_time);
 
-int disk0_mutex_mailbox_num;
-void disk_lock0();
-void disk_unlock0();
-
-void add_to_buffer(char c, int termNum);
-void flush_term_buffer(int termNum);
-
 int terminal_locks[USLOSS_MAX_UNITS];
 void terminal_lock(int termNum);
 void terminal_unlock(int termNum);
@@ -90,8 +83,10 @@ void terminal_unlock(int termNum);
 void termWriting(int termNum, char* to_write);
 void termReading(int termNum);
 
-// Core Functions
-/////////////////////////////////////////////////////////////////////////////////
+int disk0_mutex_mailbox_num;
+void disk_lock0();
+void disk_unlock0();
+
 int disk1_mutex_mailbox_num;
 void disk_lock1();
 void disk_unlock1();
@@ -111,6 +106,9 @@ void track_list_unlock0();
 int track_list1_mutex_mailbox_num;
 void track_list_lock1();
 void track_list_unlock1();
+
+// Core Functions
+/////////////////////////////////////////////////////////////////////////////////
 /**
 * Called by the testcase during bootstrap. Initializes the data structures
 * needed for this phase.
@@ -131,7 +129,8 @@ void phase4_init(void) {
 	systemCallVec[SYS_DISKREAD] = DiskRead_handler;
 	systemCallVec[SYS_DISKWRITE] = DiskWrite_handler;
 
-	disk_mutex_mailbox_num = MboxCreate(1,0);
+	disk0_mutex_mailbox_num = MboxCreate(1,0);
+	disk1_mutex_mailbox_num = MboxCreate(1,0);
 
 	for (int i = 0; i < USLOSS_MAX_UNITS; i++) {
 		term_data td;
