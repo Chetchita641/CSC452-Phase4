@@ -73,6 +73,8 @@ int disk_daemon(char*);
 int term_daemon(char*);
 void get_track_count(int unit);
 int get_tracks(char* args);
+void wait_get_tracks(int unit);	
+void disk_helper(USLOSS_Sysargs* args, int operation);
 
 void add_sleep_list(int pid, long wake_up_time);
 
@@ -161,7 +163,7 @@ void phase4_init(void) {
 */
 void phase4_start_service_processes(void) {
 	int unit0 = 0;
-	int unit1 = 0;
+	int unit1 = 1;
 
 	fork1("get_tracks", get_tracks, "", USLOSS_MIN_STACK, 1);
 	fork1("sleep_daemon", sleep_daemon, "", USLOSS_MIN_STACK, 1);
@@ -356,170 +358,7 @@ void DiskSize_handler(USLOSS_Sysargs *args) {
  * 	arg4: -1 if illegal values were given as input; 0 otherwise
 */
 void DiskRead_handler(USLOSS_Sysargs *args) {
-	int track = (int)(long) args->arg3;	
-	int my_mailbox_num = MboxCreate(1,0);
-	int unit = (int)(long) args->arg5;
-	
-	disk_list_node new_node;
-	new_node.pid = getpid();
-	new_node.started = 0;
-	new_node.track = track;
-	new_node.buffer = args->arg1;
-	new_node.sectors = (int)(long)args->arg2;
-	new_node.sectors_done = 0;
-	new_node.start_block = (int)(long)args->arg4;
-	new_node.mailbox_num = my_mailbox_num;
-	new_node.operation = READ;
-	new_node.response_status = 0;
-	new_node.next = NULL;
-	
-	if(unit==0){
-	
-		disk_lock0();
-
-		if(disk_list0==NULL){
-
-			// Send dummy operation
-			track_count_lock0();
-			int count = track_count0;
-			track_count_unlock0();
-			if(count<0){
-
-				if(DEBUG)
-					USLOSS_Console("in write, track isn;t done yet\n");
-				int mailbox_num = MboxCreate(1,0);
-		
-				track_list_node new_node;
-				new_node.mailbox_num = mailbox_num;
-				new_node.next = NULL;
-
-	
-				track_list_lock0();
-	
-				if(track_list0==NULL){
-					track_list0 = &new_node;
-				}
-				else{
-					track_list_node* head = track_list1;
-			
-					new_node.next = head->next;
-					head->next = &new_node;
-				}
-
-				track_list_unlock0();
-				
-				void* empty_message = "";
-				MboxRecv(mailbox_num, empty_message, 0);	
-				MboxRelease(mailbox_num);
-			}
-			disk_list0 = &new_node;
-			if(DEBUG)
-				USLOSS_Console("Disk queue empty, sending dummy op track count is %d\n", track_count0);
-			int num=0;
-			USLOSS_DeviceRequest req;
- 			req.opr = USLOSS_DISK_TRACKS;
-			req.reg1 = (void*)&num;
-			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
-		}
-		else{
-			disk_list_node* curr = disk_list0;
-			if(new_node.track < curr->track){
-				// Inserting value that is less than first value, put at end
-				// Itterate to end of front part of list
-				while(curr->next!=NULL && curr->track <= curr->next->track){
-					curr = curr->next;
-				}
-				// Now can just insert like normal
-			}
-
-			while(curr->next!=NULL && (curr->next->track < new_node.track)){
-				curr = curr->next;
-			}
-			new_node.next = curr->next;
-			curr->next = &new_node;
-		}
-
-		disk_unlock0();
-	}
-	else{
-		disk_lock1();
-
-		if(disk_list1==NULL){
-
-			// Send dummy operation
-			
-			track_count_lock1();
-			int count = track_count1;
-			track_count_unlock1();
-			if(count<0){
-
-				if(DEBUG)
-					USLOSS_Console("in write, track isn;t done yet\n");
-				int mailbox_num = MboxCreate(1,0);
-		
-				track_list_node new_node;
-				new_node.mailbox_num = mailbox_num;
-				new_node.next = NULL;
-
-	
-				track_list_lock1();
-	
-				if(track_list1==NULL){
-					track_list1 = &new_node;
-				}
-				else{
-					track_list_node* head = track_list1;
-			
-					new_node.next = head->next;
-					head->next = &new_node;
-				}
-
-				track_list_unlock1();
-				
-				void* empty_message = "";
-				MboxRecv(mailbox_num, empty_message, 0);	
-				MboxRelease(mailbox_num);
-			}
-			disk_list1 = &new_node;
-			if(DEBUG)
-				USLOSS_Console("Disk queue empty, sending dummy op track count is %d\n", track_count0);
-			int num=0;
-			USLOSS_DeviceRequest req;
- 			req.opr = USLOSS_DISK_TRACKS;
-			req.reg1 = (void*)&num;
-			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
-
-		}
-		else{
-			disk_list_node* curr = disk_list1;
-			if(new_node.track < curr->track){
-				// Inserting value that is less than first value, put at end
-				// Itterate to end of front part of list
-				while(curr->next!=NULL && curr->track <= curr->next->track){
-					curr = curr->next;
-				}
-				// Now can just insert like normal
-			}
-
-			while(curr->next!=NULL && (curr->next->track < new_node.track)){
-				curr = curr->next;
-			}
-			new_node.next = curr->next;
-			curr->next = &new_node;
-		}
-
-		disk_unlock1();
-	}
-
-
-	
-	// Recv on specified mailbox, so daemon can wake me up at the right time
-	void* empty_message = "";
-	MboxRecv(my_mailbox_num, empty_message, 0);	
-	MboxRelease(my_mailbox_num);
-	//Operation is complete
-	args->arg1 = (void*)(long)0;
-	args->arg4 = (void*)(long)new_node.response_status;;
+	disk_helper(args, READ);
 }
 
 /** 
@@ -536,175 +375,7 @@ void DiskRead_handler(USLOSS_Sysargs *args) {
  * 	arg4: -1 if illegal values were given as input; 0 otherwise
 */
 void DiskWrite_handler(USLOSS_Sysargs *args) {
-	if(DEBUG)
-		USLOSS_Console("In write handler\n");
-	int track = (int)(long) args->arg3;	
-	int my_mailbox_num = MboxCreate(1,0);
-	int unit = (int)(long) args->arg5;
-
-	disk_list_node new_node;
-	new_node.pid = getpid();
-	new_node.started = 0;
-	new_node.track = track;
-	new_node.mailbox_num = my_mailbox_num;
-	new_node.buffer = args->arg1;
-	new_node.sectors = (int)(long)args->arg2;
-	new_node.sectors_done = 0;
-	new_node.start_block = (int)(long)args->arg4;
-	new_node.operation = WRITE;
-	new_node.response_status = 0;
-	new_node.next = NULL;
-
-	if(unit==0){
-	
-		disk_lock0();
-
-		if(disk_list0==NULL){
-			// Send dummy operation
-			
-			track_count_lock0();
-			int count = track_count0;
-			track_count_unlock0();
-			if(count<0){
-
-				if(DEBUG)
-					USLOSS_Console("in write, track isn;t done yet\n");
-				int mailbox_num = MboxCreate(1,0);
-		
-				track_list_node new_node;
-				new_node.mailbox_num = mailbox_num;
-				new_node.next = NULL;
-
-	
-				track_list_lock0();
-	
-				if(track_list0==NULL){
-					track_list0 = &new_node;
-				}
-				else{
-					track_list_node* head = track_list0;
-			
-					new_node.next = head->next;
-					head->next = &new_node;
-				}
-
-				track_list_unlock0();
-				
-				void* empty_message = "";
-				MboxRecv(mailbox_num, empty_message, 0);	
-				MboxRelease(mailbox_num);
-			}
-			disk_list0 = &new_node;
-			if(DEBUG)
-				USLOSS_Console("Disk queue empty, sending dummy op track count is %d\n", track_count0);
-			int num=0;
-			USLOSS_DeviceRequest req;
- 			req.opr = USLOSS_DISK_TRACKS;
-			req.reg1 = (void*)&num;
-			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
-
-		/*	USLOSS_Sysargs args;
- 			args.arg1 = (void *) ( (long) unit);
-			DiskSize_handler(&args);*/
-		}
-		else{
-			disk_list_node* curr = disk_list0;
-			if(new_node.track < curr->track){
-				// Inserting value that is less than first value, put at end
-				// Itterate to end of front part of list
-				while(curr->next!=NULL && curr->track <= curr->next->track){
-					curr = curr->next;
-				}
-				// Now can just insert like normal
-			}
-
-			while(curr->next!=NULL && (curr->next->track < new_node.track)){
-				curr = curr->next;
-			}
-			new_node.next = curr->next;
-			curr->next = &new_node;
-		}
-
-		disk_unlock0();
-	}
-	else{
-		disk_lock1();
-
-		if(disk_list1==NULL){
-
-			// Send dummy operation
-			
-			track_count_lock1();
-			int count = track_count1;
-			track_count_unlock1();
-			if(count<0){
-
-				if(DEBUG)
-					USLOSS_Console("in write, track isn;t done yet\n");
-				int mailbox_num = MboxCreate(1,0);
-		
-				track_list_node new_node;
-				new_node.mailbox_num = mailbox_num;
-				new_node.next = NULL;
-
-	
-				track_list_lock1();
-	
-				if(track_list1==NULL){
-					track_list1 = &new_node;
-				}
-				else{
-					track_list_node* head = track_list1;
-			
-					new_node.next = head->next;
-					head->next = &new_node;
-				}
-
-				track_list_unlock1();
-				
-				void* empty_message = "";
-				MboxRecv(mailbox_num, empty_message, 0);	
-				MboxRelease(mailbox_num);
-			}
-			disk_list1 = &new_node;
-			if(DEBUG)
-				USLOSS_Console("Disk queue empty, sending dummy op track count is %d\n", track_count0);
-			int num=0;
-			USLOSS_DeviceRequest req;
- 			req.opr = USLOSS_DISK_TRACKS;
-			req.reg1 = (void*)&num;
-			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
-		}
-		else{
-			disk_list_node* curr = disk_list1;
-			if(new_node.track < curr->track){
-				// Inserting value that is less than first value, put at end
-				// Itterate to end of front part of list
-				while(curr->next!=NULL && curr->track <= curr->next->track){
-					curr = curr->next;
-				}
-				// Now can just insert like normal
-			}
-
-			while(curr->next!=NULL && (curr->next->track < new_node.track)){
-				curr = curr->next;
-			}
-			new_node.next = curr->next;
-			curr->next = &new_node;
-		}
-
-		disk_unlock1();
-	}
-
-
-	
-	// Recv on specified mailbox, so daemon can wake me up at the right time
-	void* empty_message = "";
-	MboxRecv(my_mailbox_num, empty_message, 0);	
-	MboxRelease(my_mailbox_num);
-	//Operation is complete
-	args->arg1 = (void*)(long)0;
-	args->arg4 = (void*)(long)new_node.response_status;;
+	disk_helper(args, WRITE);
 }
 
 /** 
@@ -827,12 +498,143 @@ int sleep_daemon(char* arg){
 	return 0;
 }
 
+void disk_helper(USLOSS_Sysargs* args, int operation){
+
+	// Access arguments
+	int sectors_num = (int)(long) args->arg2;
+	int track = (int)(long) args->arg3;	
+	int start_block = (int)(long) args->arg4;
+	int my_mailbox_num = MboxCreate(1,0);
+	int unit = (int)(long) args->arg5;
+	
+	// Validate args
+	if((unit!=0&&unit!=1)|| start_block<0 || start_block>16){
+		args->arg4 = -1;
+		return;
+	}
+
+	// Create node for disk queue
+	disk_list_node new_node;
+	new_node.pid = getpid();
+	new_node.started = 0;
+	new_node.track = track;
+	new_node.mailbox_num = my_mailbox_num;
+	new_node.buffer = args->arg1;
+	new_node.sectors = sectors_num;
+	new_node.sectors_done = 0;
+	new_node.start_block = start_block;
+	new_node.operation = operation;
+	new_node.response_status = 0;
+	new_node.next = NULL;
+
+	if(unit==0){
+	
+		disk_lock0();
+		if(disk_list0==NULL){
+
+			// No one on queue (disk daemon idle)
+			
+			disk_list0 = &new_node;
+			disk_unlock0();
+			
+			// Need to wait until track count is done being set, so the
+			// process getting track count doesn't "steal" this operation
+			// we are sending
+			wait_get_tracks(unit);
+			
+			// Send dummy operation to wake up idle daemon
+			int num=0;
+			USLOSS_DeviceRequest req;
+ 			req.opr = USLOSS_DISK_TRACKS;
+			req.reg1 = (void*)&num;
+			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
+		}
+		else{
+			disk_list_node* curr = disk_list0;
+			if(new_node.track < curr->track){
+				// Inserting value that is less than head of list, put in second part of list
+				// Iterate to end of front part of list
+				while(curr->next!=NULL && curr->track <= curr->next->track){
+					curr = curr->next;
+				}
+				// Now can just insert like normal
+				while(curr->next!=NULL && (curr->next->track < new_node.track)){
+					curr = curr->next;
+				}
+				new_node.next = curr->next;
+				curr->next = &new_node;
+			}
+			else{
+				// Insert value that isn't greater than head of list
+				// Put in order in first part of list
+				while(curr->next!=NULL && (curr->next->track < new_node.track) && (curr->track<curr->next->track)){
+					curr = curr->next;
+				}
+				new_node.next = curr->next;
+				curr->next = &new_node;
+			}
+			disk_unlock0();
+		}
+	}
+	else{ // Same as above but for disk 1
+		disk_lock1();
+		if(disk_list1==NULL){
+
+			
+			disk_list1 = &new_node;
+			disk_unlock1();
+	
+			wait_get_tracks(unit);
+			
+			int num=0;
+			USLOSS_DeviceRequest req;
+ 			req.opr = USLOSS_DISK_TRACKS;
+			req.reg1 = (void*)&num;
+			USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &req);
+		}
+		else{
+			disk_list_node* curr = disk_list1;
+			if(new_node.track < curr->track){
+				while(curr->next!=NULL && curr->track <= curr->next->track){
+					curr = curr->next;
+				}
+				while(curr->next!=NULL && (curr->next->track < new_node.track)){
+					curr = curr->next;
+				}
+				new_node.next = curr->next;
+				curr->next = &new_node;
+			}
+			else{
+				while(curr->next!=NULL && (curr->next->track < new_node.track) && (curr->track<curr->next->track)){
+					curr = curr->next;
+				}
+				new_node.next = curr->next;
+				curr->next = &new_node;
+			}
+			disk_unlock1();
+		}
+
+	}
+
+	
+	// Recv on specified mailbox, so daemon can wake me up at the right time
+	void* empty_message = "";
+	MboxRecv(my_mailbox_num, empty_message, 0);	
+	
+	//Operation is complete
+	MboxRelease(my_mailbox_num);
+	args->arg1 = (void*)(long)new_node.response_status;
+	args->arg4 = (void*)(long)0;
+}
+
 int get_tracks(char* args){
 	get_track_count(0);
 	get_track_count(1);
+
 	USLOSS_Sysargs sysArgs0;
  	sysArgs0.arg1 = (void *) ( (long) 0);
 	DiskSize_handler(&sysArgs0);
+
 	USLOSS_Sysargs sysArgs1;
  	sysArgs1.arg1 = (void *) ( (long) 1);
 	DiskSize_handler(&sysArgs1);
@@ -883,18 +685,91 @@ void get_track_count(int unit){
 		track_list_unlock1();
 	}
 }
+void wait_get_tracks(int unit){
+	if(unit==0){
+		
+			track_count_lock0();
+			int count = track_count0;
+			track_count_unlock0();
+			if(count<0){
+
+				if(DEBUG)
+					USLOSS_Console("in write, track isn;t done yet\n");
+				int mailbox_num = MboxCreate(1,0);
+		
+				track_list_node new_node;
+				new_node.mailbox_num = mailbox_num;
+				new_node.next = NULL;
+
+	
+				track_list_lock0();
+	
+				if(track_list0==NULL){
+					track_list0 = &new_node;
+				}
+				else{
+					track_list_node* head = track_list0;
+			
+					new_node.next = head->next;
+					head->next = &new_node;
+				}
+
+				track_list_unlock0();
+				
+				void* empty_message = "";
+				MboxRecv(mailbox_num, empty_message, 0);	
+				MboxRelease(mailbox_num);
+			}
+
+	}
+	else{
+			track_count_lock1();
+			int count = track_count1;
+			track_count_unlock1();
+			if(count<0){
+
+				if(DEBUG)
+					USLOSS_Console("in write, track isn;t done yet\n");
+				int mailbox_num = MboxCreate(1,0);
+		
+				track_list_node new_node;
+				new_node.mailbox_num = mailbox_num;
+				new_node.next = NULL;
+
+	
+				track_list_lock1();
+	
+				if(track_list1==NULL){
+					track_list1 = &new_node;
+				}
+				else{
+					track_list_node* head = track_list1;
+			
+					new_node.next = head->next;
+					head->next = &new_node;
+				}
+
+				track_list_unlock1();
+				
+				void* empty_message = "";
+				MboxRecv(mailbox_num, empty_message, 0);	
+				MboxRelease(mailbox_num);
+			}
+	}
+}
 
 int disk_daemon(char* arg){
 	int status;
 	int unit = (int)(long)arg;
 	disk_list_node* curr;
 	USLOSS_DeviceRequest req;
+	wait_get_tracks(unit);
 	while(1){
 		if(DEBUG)
-			USLOSS_Console("Before waitDevice in Disk\n");
+			USLOSS_Console("Before waitDevice in Disk %d\n", unit);
 		waitDevice(USLOSS_DISK_DEV, unit, &status);
 		if(DEBUG)
-			USLOSS_Console("After waitDevice in disk\n");
+			USLOSS_Console("After waitDevice in disk %d\n", unit);
 		// grab next proc off queue
 		if(unit==0){
 			disk_lock0();
@@ -902,12 +777,18 @@ int disk_daemon(char* arg){
 			disk_unlock0();
 		}
 		else{
+			if(DEBUG)
+				USLOSS_Console("get curr from unit1\n");
 			disk_lock1();
 			curr = disk_list1;
 			disk_unlock1();
 		}
 		if(curr!=NULL){
+			if(DEBUG)
+				USLOSS_Console("curr is not null\n");
 		if(status == USLOSS_DEV_ERROR){
+			if(DEBUG)
+				USLOSS_Console("Status is error\n");
 			if(unit==0){
 				disk_lock0();
 				disk_list0 = disk_list0->next;
@@ -924,26 +805,11 @@ int disk_daemon(char* arg){
 			MboxSend(curr->mailbox_num, empty_message, 0);
 		}
 		else{
+			if(DEBUG)
+				USLOSS_Console("Status isnt error\n");
 			if(curr->started){
 				if(DEBUG)
 					USLOSS_Console("Continuing an op\n");
-				/*if(curr->operation==SIZE){
-					// If operation is done remove from queue
-					// grab next proc off queue
-					if(unit==0){
-						disk_lock0();
-						curr = disk_list0;
-						disk_unlock0();
-					}
-					else{
-						disk_lock1();
-						curr = disk_list1;
-						disk_unlock1();
-					}
-					// Wake up the process for this operation
-					void* empty_message = "";
-					MboxSend(curr->mailbox_num, empty_message, 0);
-				}*/
 				// At correct track, ready to read/write
 				//else if(curr->sectors == 0){
 				if(curr->sectors_done == curr->sectors){
@@ -954,11 +820,13 @@ int disk_daemon(char* arg){
 					if(unit==0){
 						disk_lock0();
 						curr = disk_list0;
+						disk_list0 = curr->next;
 						disk_unlock0();
 					}
 					else{
 						disk_lock1();
 						curr = disk_list1;
+						disk_list1 = curr->next;
 						disk_unlock1();
 					}
 					// Wake up the process for this operation
@@ -967,11 +835,13 @@ int disk_daemon(char* arg){
 					MboxSend(curr->mailbox_num, empty_message, 0);
 				}
 				else{
-					// TODO: Check if crossed into next sector
-					// if so, need to seek again.
+					if(DEBUG)
+						USLOSS_Console("Keep continuing\n");
 					
 					int block = curr->start_block;
 					if(block==16){
+						if(DEBUG)
+							USLOSS_Console("cross to next sector\n");
 						// Cross to next sector
 						curr->start_block = 0;
 						curr->track++;
@@ -1003,14 +873,8 @@ int disk_daemon(char* arg){
 				if(DEBUG)
 					USLOSS_Console("Strating new op\n");
 				curr->started = 1;
-				/*if(curr->operation==SIZE){
-					req.opr = USLOSS_DISK_TRACKS;
-					req.reg1 = curr->response_status;
-				}
-				else{*/
 					req.opr = USLOSS_DISK_SEEK;
 					req.reg1 = curr->track;
-				//}
 			}
 			if(DEBUG)
 				USLOSS_Console("Sending a request\n");
@@ -1021,6 +885,7 @@ int disk_daemon(char* arg){
 	}
 	return 0;
 }
+
 
 // Helper Functions
 /////////////////////////////////////////////////////////////////////////////////
