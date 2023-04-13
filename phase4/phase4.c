@@ -771,12 +771,13 @@ int term_daemon(char* arg) {
 		MboxCondRecv(term_ptr->begin_write_mb, to_write, MAXLINE);
 		if (USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY && strlen(to_write) > 0) {
 			termWriting(termNum, to_write);
+			memset(to_write,0,MAXLINE+1);
+
 			char* empty_message = "";
 			MboxSend(term_ptr->finish_write_mb,empty_message,0);
 		}
 
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY) {
-			terminal_lock(termNum);
 
 			char c = USLOSS_TERM_STAT_CHAR(status);
 			int len = (int) strlen(term_ptr->buffer);
@@ -786,7 +787,6 @@ int term_daemon(char* arg) {
 				termReading(termNum);				
 			}
 
-			terminal_unlock(termNum); 
 		}
 	}
 }
