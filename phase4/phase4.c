@@ -46,7 +46,8 @@ typedef struct disk_list_node{
 
 typedef struct term_data {
 	int read_mb;
-	int write_mb;
+	int begin_write_mb;
+	int finish_write_mb;
 	char buffer[MAXLINE+1];
 } term_data;
 
@@ -135,7 +136,8 @@ void phase4_init(void) {
 	for (int i = 0; i < USLOSS_MAX_UNITS; i++) {
 		term_data td;
 		td.read_mb = MboxCreate(MAX_TERM_BUFFERS,MAXLINE+1);
-		td.write_mb = MboxCreate(1,MAXLINE+1);
+		td.begin_write_mb = MboxCreate(1,MAXLINE+1);
+		td.finish_write_mb = MboxCreate(1,MAXLINE+1);
 		memset(td.buffer,0,MAXLINE+1);
 		terminals[i] = td; 
 
@@ -206,6 +208,8 @@ void TermRead_handler(USLOSS_Sysargs *args) {
 		return;
 	}
 
+	terminal_lock(termNum);
+
 	term_data* term_ptr = &terminals[termNum];
 	if (DEBUG) {
 		USLOSS_Console("DEBUG: Right before receiving message\n");
@@ -217,6 +221,8 @@ void TermRead_handler(USLOSS_Sysargs *args) {
 	int charsRead = strlen(buffer);
 	args->arg2 = (void*)(long) charsRead;
 	args->arg4 = 0;
+
+	terminal_unlock(termNum);
 }
 
 /** 
@@ -244,12 +250,18 @@ void TermWrite_handler(USLOSS_Sysargs *args) {
 		return;
 	}
 
+	terminal_lock(termNum);
+
 	term_data* term_ptr = &terminals[termNum];
 	
-	MboxSend(term_ptr->write_mb, buffer, bufferSize);
+	MboxSend(term_ptr->begin_write_mb, buffer, bufferSize);
+	char* empty_message = "";
+	MboxRecv(term_ptr->finish_write_mb, empty_message, 0);
 
 	args->arg2 = (void*)(long) bufferSize;
 	args->arg4 = 0;
+
+	terminal_unlock(termNum);
 }
 
 /** 
@@ -756,16 +768,11 @@ int term_daemon(char* arg) {
 
 	while (1) {
 		waitDevice(USLOSS_TERM_DEV, termNum, &status);
-		//USLOSS_DeviceInput(USLOSS_TERM_DEV, termNum, &status);
-		
-		MboxCondRecv(term_ptr->write_mb, to_write, MAXLINE);
+		MboxCondRecv(term_ptr->begin_write_mb, to_write, MAXLINE);
 		if (USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY && strlen(to_write) > 0) {
-			terminal_lock(termNum);
-
 			termWriting(termNum, to_write);
-			memset(to_write,0,MAXLINE+1);
-
-			terminal_unlock(termNum);
+			char* empty_message = "";
+			MboxSend(term_ptr->finish_write_mb,empty_message,0);
 		}
 
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY) {
