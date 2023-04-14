@@ -46,6 +46,7 @@ typedef struct disk_list_node{
 
 typedef struct term_data {
 	int read_mb;
+	int read_len_mb;
 	int begin_write_mb;
 	int finish_write_mb;
 	char buffer[MAXLINE+1];
@@ -137,6 +138,7 @@ void phase4_init(void) {
 	for (int i = 0; i < USLOSS_MAX_UNITS; i++) {
 		term_data td;
 		td.read_mb = MboxCreate(MAX_TERM_BUFFERS,MAXLINE+1);
+		td.read_len_mb = MboxCreate(MAX_TERM_BUFFERS,3);
 		td.begin_write_mb = MboxCreate(1,MAXLINE+1);
 		td.finish_write_mb = MboxCreate(1,MAXLINE+1);
 		memset(td.buffer,0,MAXLINE+1);
@@ -213,10 +215,13 @@ void TermRead_handler(USLOSS_Sysargs *args) {
 
 	term_data* term_ptr = &terminals[termNum];
 
+	char lenStr[3];
+	MboxRecv(term_ptr->read_len_mb, lenStr, 3);	
+	
 	char tempBuf[MAXLINE+1];
-	MboxRecv(term_ptr->read_mb, tempBuf, bufferSize);
-	int length = strlen(tempBuf);
-	int charsRead = bufferSize < length ? bufferSize : length;
+	MboxRecv(term_ptr->read_mb, tempBuf, atoi(lenStr));
+	int charsRead = bufferSize < atoi(lenStr) ? bufferSize : atoi(lenStr);
+
 	memcpy(buffer,tempBuf,charsRead);
 
 	args->arg2 = (void*)(long) charsRead;
@@ -769,8 +774,10 @@ int term_daemon(char* arg) {
 			}
 
 			if (c == '\0') {
-				if (DEBUG)
-					USLOSS_Console("DEBUG: Read %s from terminal %d\n", term_ptr->buffer, termNum);
+				char lenStr[3];
+				sprintf(lenStr, "%d", term_ptr->bi);
+				MboxCondSend(term_ptr->read_len_mb, lenStr, 3);
+	
 				MboxCondSend(term_ptr->read_mb, term_ptr->buffer, term_ptr->bi);
 				memset(term_ptr->buffer, 0, MAXLINE+1);
 				term_ptr->bi = 0;
