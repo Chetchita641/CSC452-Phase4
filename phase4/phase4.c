@@ -761,6 +761,7 @@ void wait_get_tracks(int unit){
 int disk_daemon(char* arg){
 	int status;
 	int unit = (int)(long)arg;
+	char block_buff[512];
 	disk_list_node* curr;
 	USLOSS_DeviceRequest req;
 	wait_get_tracks(unit);
@@ -816,7 +817,7 @@ int disk_daemon(char* arg){
 					// If operation is done remove from queue
 					// grab next proc off queue
 					if(DEBUG)
-						USLOSS_Console("done w op\n");
+						USLOSS_Console("done w op buff was %s\n", block_buff);;
 					if(unit==0){
 						disk_lock0();
 						curr = disk_list0;
@@ -830,6 +831,10 @@ int disk_daemon(char* arg){
 						disk_unlock1();
 					}
 					// Wake up the process for this operation
+					if(curr->operation==READ){
+						int buff_offset = (curr->sectors_done - 1)*512;
+						memcpy(curr->buffer+buff_offset, block_buff, 512);
+					}		
 					curr->response_status = status;
 					void* empty_message = "";
 					MboxSend(curr->mailbox_num, empty_message, 0);
@@ -854,12 +859,17 @@ int disk_daemon(char* arg){
 					curr->sectors_done++;
 					curr->start_block++;
 					
+					if(curr->operation==READ && curr->sectors_done>0){
+						int prev_buff_offset = (curr->sectors_done - 1)*512;
+						memcpy(curr->buffer+prev_buff_offset, block_buff, 512);
+					}		
 					int block_index = block;
 					char *buf = (curr->buffer)+(buff_offset*512);
+					memcpy(block_buff, buf, 512);
 					if(DEBUG)
-						USLOSS_Console("Gonna do write/read block %d blcok index %d track %d of buff %p\n", block, block_index, curr->track, buf);
+						USLOSS_Console("Gonna do write/read block %d blcok index %d track %d of buff %p\n", block, block_index, curr->track, block_buff);
 					req.reg1 = (void*)(long)block_index;
-					req.reg2 = buf;
+					req.reg2 = block_buff;
 					if(curr->operation==READ){
 						req.opr = USLOSS_DISK_READ;
 					}
