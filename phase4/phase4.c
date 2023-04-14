@@ -49,6 +49,7 @@ typedef struct term_data {
 	int begin_write_mb;
 	int finish_write_mb;
 	char buffer[MAXLINE+1];
+	int bi;
 } term_data;
 
 term_data terminals[USLOSS_MAX_UNITS];
@@ -139,6 +140,7 @@ void phase4_init(void) {
 		td.begin_write_mb = MboxCreate(1,MAXLINE+1);
 		td.finish_write_mb = MboxCreate(1,MAXLINE+1);
 		memset(td.buffer,0,MAXLINE+1);
+		td.bi = 0;
 		terminals[i] = td; 
 
 		// Activating locks for terminal locks
@@ -212,10 +214,11 @@ void TermRead_handler(USLOSS_Sysargs *args) {
 	term_data* term_ptr = &terminals[termNum];
 
 	char tempBuf[MAXLINE+1];
-	MboxRecv(term_ptr->read_mb, tempBuf, MAXLINE);
-	memcpy(buffer,tempBuf,bufferSize);
+	MboxRecv(term_ptr->read_mb, tempBuf, bufferSize);
+	int length = strlen(tempBuf);
+	int charsRead = bufferSize < length ? bufferSize : length;
+	memcpy(buffer,tempBuf,charsRead);
 
-	int charsRead = strlen(buffer);
 	args->arg2 = (void*)(long) charsRead;
 	args->arg4 = 0;
 }
@@ -757,13 +760,22 @@ int term_daemon(char* arg) {
 
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY) {
 			char c = USLOSS_TERM_STAT_CHAR(status);
-			int len = (int) strlen(term_ptr->buffer);
-			term_ptr->buffer[len] = c;
+			term_ptr->buffer[term_ptr->bi] = c;
+		
+			if (c == '\n' || term_ptr->bi == MAXLINE) {
+				term_ptr->bi++;
+				c = '\0';
+				term_ptr->buffer[term_ptr->bi] = c;
+			}
 
-			if (c == '\0' || c == '\n' || len > MAXLINE) {
-				term_ptr->buffer[len+1] = '\0';
-				MboxCondSend(term_ptr->read_mb, term_ptr->buffer, strlen(term_ptr->buffer));
+			if (c == '\0') {
+				if (DEBUG)
+					USLOSS_Console("DEBUG: Read %s from terminal %d\n", term_ptr->buffer, termNum);
+				MboxCondSend(term_ptr->read_mb, term_ptr->buffer, term_ptr->bi);
 				memset(term_ptr->buffer, 0, MAXLINE+1);
+				term_ptr->bi = 0;
+			} else {
+				term_ptr->bi++;
 			}
 
 		}
